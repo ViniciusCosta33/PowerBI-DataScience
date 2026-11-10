@@ -12,7 +12,8 @@ const db = sb.schema("escritorio");
 
 // ------------------------------------------------------------------ estado
 let me = null;              // linha de escritorio.usuarios do usuário logado
-let D = { tarefas: [], pend: [], usuarios: [], clientes: [], resumo: [], hist: [], garg: [], rec: [] };
+let D = { tarefas: [], pend: [], usuarios: [], clientes: [], resumo: [], hist: [], garg: [], rec: [], robo: [] };
+let tokenNovo = null;  // chave do robô recém-gerada (mostrada uma única vez)
 let tab = "minhas";         // gestor: painel | todas | nova | cadastros | minhas
 let openDep = null, openConc = null, confirmDel = null, authMode = "login", timer = null;
 
@@ -150,7 +151,7 @@ async function q(p) { const { data, error } = await p; if (error) throw error; r
 async function load() {
   try {
     const gest = me.perfil === "gestor";
-    const [tarefas, pend, usuarios, clientes, resumo, hist, garg, rec] = await Promise.all([
+    const [tarefas, pend, usuariosTodos, clientes, resumo, hist, garg, rec, robo] = await Promise.all([
       q(db.from("vw_tarefas").select("*")),
       q(db.from("vw_pendencias_abertas").select("*")),
       q(db.from("usuarios").select("id,nome,email,cargo,area,perfil,modalidade,ativo,auth_user_id").order("nome")),
@@ -159,8 +160,10 @@ async function load() {
       gest ? q(db.from("vw_gestor_linha_tempo").select("*").order("ocorrido_em", { ascending: false }).limit(60)) : [],
       gest ? q(db.from("vw_gestor_gargalos").select("*")) : [],
       gest ? q(db.from("vw_tarefas_recorrentes").select("*").order("ativo", { ascending: false }).order("proximo_vencimento")) : [],
+      gest ? q(db.from("robo_eventos").select("*").order("ocorrido_em", { ascending: false }).limit(40)) : [],
     ]);
-    D = { tarefas, pend, usuarios, clientes, resumo, hist, garg, rec };
+    const usuarios = usuariosTodos.filter(u => !/@interno\.invalid$/.test(u.email));  // esconde o usuário técnico do robô
+    D = { tarefas, pend, usuarios, clientes, resumo, hist, garg, rec, robo };
   } catch (e) { toast("Erro ao carregar: " + errMsg(e)); }
 }
 async function rpc(fn, args, okMsg) {
@@ -344,6 +347,28 @@ function viewRecorrentes() {
     <p class="small muted">Pausar não apaga as tarefas já criadas. Trocar o responsável vale para as próximas tarefas.</p></section>`;
 }
 
+const ROBO_RES = {
+  baixada: ["Baixa dada", "Liberada para iniciar"], bloqueada: ["Tarefa com pendência", "Em revisão"],
+  cnd_positiva: ["CND positiva: pendência aberta", "Bloqueada"], sem_tarefa: ["Arquivado, sem tarefa aberta", "Em revisão"],
+  sem_cliente: ["A conferir: cliente não achado", "Bloqueada"], nao_reconhecido: ["A conferir: não reconhecido", "Bloqueada"],
+};
+function viewRobo() {
+  const nomeCli = id => (D.clientes.find(c => c.id === id) || {}).razao_social || "";
+  return `<section><div class="sec-head"><h2>Robô de documentos</h2>
+      <span class="small muted">lê os PDFs de 00_ENTRADA no computador central, arquiva na pasta do cliente e dá a baixa</span></div>
+    ${tokenNovo ? `<div class="deps"><b>Chave do robô (aparece só agora):</b>
+        <span class="mono" style="word-break:break-all">${esc(tokenNovo)}</span>
+        <div class="actions"><button class="btn" data-act="copiar-token" type="button">Copiar</button>
+        <span class="small muted">Cole no robo_config.ini do computador central, em token_robo. A chave anterior parou de funcionar.</span></div></div>`
+      : `<div class="actions"><button class="btn" data-act="gerar-token" type="button">Gerar chave do robô</button>
+        <span class="small muted">Gerar uma nova chave desativa a anterior.</span></div>`}
+    ${D.robo.length ? `<div class="tbl"><table><thead><tr><th>Quando</th><th>Arquivo</th><th>Cliente</th><th>Resultado</th><th>Detalhe</th><th>Arquivado em</th></tr></thead><tbody>` +
+      D.robo.map(e => { const [txt, key] = ROBO_RES[e.resultado] || [e.resultado, "Concluída"];
+        return `<tr><td class="mono">${fDT(e.ocorrido_em)}</td><td class="small">${esc(e.arquivo)}</td><td>${esc(nomeCli(e.cliente_id))}${e.tarefa_id ? `<br><span class="small muted">tarefa #${e.tarefa_id}</span>` : ""}</td>
+          <td>${pill(txt, key)}</td><td class="small wrapc">${esc(e.detalhe || "")}</td><td class="mono small">${esc(e.caminho_destino || "")}</td></tr>`; }).join("") + `</tbody></table></div>`
+      : '<div class="empty">O robô ainda não processou nenhum documento.</div>'}</section>`;
+}
+
 function viewCadastros() {
   const opt = arr => arr.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
   return `<section><div class="sec-head"><h2>Equipe</h2><span class="small muted">depois de cadastrar, a pessoa entra no app e clica em "Primeiro acesso"</span></div>
@@ -360,6 +385,7 @@ function viewCadastros() {
       <label>Perfil <select id="nu-perfil">${opt([["colaborador", "Colaborador"], ["gestor", "Gestor"]])}</select></label>
       <label>Modalidade <select id="nu-mod">${opt(Object.entries(MOD))}</select></label>
       <div class="full"><button class="btn primary" type="submit">Cadastrar pessoa</button></div></form></section>
+  ${viewRobo()}
   <section><div class="sec-head"><h2>Clientes</h2></div>
     <div class="tbl"><table><thead><tr><th>Código</th><th>Razão social</th><th>CNPJ/CPF</th><th>Regime</th><th>Contato</th><th>Pasta</th></tr></thead><tbody>` +
     (D.clientes.map(c => `<tr><td class="mono">${esc(c.codigo)}</td><td>${esc(c.razao_social)}</td><td class="mono">${esc(c.cnpj_cpf)}</td><td>${esc(c.regime_tributario || "")}</td>
@@ -390,6 +416,15 @@ $("#app").addEventListener("click", async e => {
     case "concluir": openConc = id; openDep = null; return render();
     case "cancel-conc": openConc = null; return render();
     case "excluir": confirmDel = id; return render();
+    case "gerar-token": {
+      const { data, error } = await db.rpc("fn_gerar_token_robo", {});
+      if (error) return toast(errMsg(error));
+      tokenNovo = data; return render();
+    }
+    case "copiar-token":
+      try { await navigator.clipboard.writeText(tokenNovo); toast("Chave copiada."); }
+      catch { toast("Não deu para copiar automaticamente: selecione o texto da chave e copie."); }
+      return;
     case "excluir-nao": confirmDel = null; return render();
     case "excluir-ok": {
       confirmDel = null;

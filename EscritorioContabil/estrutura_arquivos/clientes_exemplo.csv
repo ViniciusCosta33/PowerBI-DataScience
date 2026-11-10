@@ -1,0 +1,6 @@
+codigo;razao_social;cnpj_cpf;regime_tributario;ativo
+C0001;Padaria Pão Quente Ltda;11.111.111/0001-11;Lucro Presumido;S
+C0002;Loja Bella Moda ME;22.222.222/0001-22;Simples Nacional;S
+C0003;Transportes Rota Sul Ltda;33.333.333/0001-33;Lucro Real;S
+C0004;Clínica Sorriso S/S;44.444.444/0001-44;Simples Nacional;S
+C0005;Comércio Antigo Ltda;55.555.555/0001-55;Simples Nacional;N

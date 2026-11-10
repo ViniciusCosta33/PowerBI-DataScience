@@ -33,6 +33,6 @@
   ],
   "framework": null,
   "installCommand": "",
-  "buildCommand": "echo \"pasta: $(pwd)\"; S=.; if [ -d EscritorioContabil/app ]; then S=EscritorioContabil/app; fi; rm -rf public && mkdir public && cp $S/index.html $S/style.css $S/app.js $S/config.js public/ && ls public",
+  "buildCommand": "echo \"pasta: $(pwd)\"; S=.; if [ -d EscritorioContabil/app ]; then S=EscritorioContabil/app; elif [ -d app ]; then S=app; fi; rm -rf public && mkdir public && cp $S/index.html $S/style.css $S/app.js $S/config.js public/ && ls public",
   "outputDirectory": "public"
 }

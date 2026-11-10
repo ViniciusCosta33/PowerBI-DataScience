@@ -109,3 +109,20 @@ NOTIFY pgrst, 'reload config';
 
 -- ---------------------------------------------------------------- área Legalização (bancos criados antes dela)
 ALTER TYPE escritorio.area_escritorio ADD VALUE IF NOT EXISTS 'legalizacao' AFTER 'societario';
+
+-- ---------------------------------------------------------------- só o gestor inclui, exclui ou cancela tarefas
+DROP POLICY IF EXISTS tarefas_criar ON escritorio.tarefas;
+CREATE POLICY tarefas_criar ON escritorio.tarefas FOR INSERT TO authenticated WITH CHECK (escritorio.fn_eh_gestor());
+
+CREATE OR REPLACE FUNCTION escritorio.fn_bloquear_cancelamento()
+RETURNS TRIGGER LANGUAGE plpgsql SET search_path = escritorio, public AS $$
+BEGIN
+    IF auth.uid() IS NOT NULL AND NOT fn_eh_gestor()
+       AND NEW.status = 'cancelada' AND OLD.status IS DISTINCT FROM 'cancelada' THEN
+        RAISE EXCEPTION 'Somente o gestor pode cancelar ou excluir tarefas.';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER b_trg_bloquear_cancelamento BEFORE UPDATE OF status ON escritorio.tarefas
+FOR EACH ROW EXECUTE FUNCTION escritorio.fn_bloquear_cancelamento();
+REVOKE EXECUTE ON FUNCTION escritorio.fn_bloquear_cancelamento() FROM PUBLIC, anon;

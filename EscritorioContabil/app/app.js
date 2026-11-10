@@ -14,7 +14,7 @@ const db = sb.schema("escritorio");
 let me = null;              // linha de escritorio.usuarios do usuário logado
 let D = { tarefas: [], pend: [], usuarios: [], clientes: [], resumo: [], hist: [], garg: [], rec: [] };
 let tab = "minhas";         // gestor: painel | todas | nova | cadastros | minhas
-let openDep = null, openConc = null, authMode = "login", timer = null;
+let openDep = null, openConc = null, confirmDel = null, authMode = "login", timer = null;
 
 // ------------------------------------------------------------------ util
 const $ = s => document.querySelector(s);
@@ -212,6 +212,9 @@ function taskCard(t) {
     if (["em_andamento", "em_revisao"].includes(t.status)) b.push(`<button class="btn primary" data-act="concluir" data-id="${t.tarefa_id}" type="button">Concluir</button>`);
     if (t.status === "aguardando") b.push(`<button class="btn" disabled type="button">Concluir</button><span class="why">Resolva as pendências antes de concluir</span>`);
     b.push(`<button class="btn link" data-act="dep" data-id="${t.tarefa_id}" type="button">${openDep === t.tarefa_id ? "Fechar" : "+ Registrar pendência"}</button>`);
+    if (me.perfil === "gestor") b.push(confirmDel === t.tarefa_id
+      ? `<span class="why">Excluir a tarefa e o histórico dela?</span><button class="btn" data-act="excluir-ok" data-id="${t.tarefa_id}" type="button">Sim, excluir</button><button class="btn" data-act="excluir-nao" type="button">Não</button>`
+      : `<button class="btn link" data-act="excluir" data-id="${t.tarefa_id}" type="button">Excluir</button>`);
     h += `<div class="actions">${b.join("")}</div>`;
     if (openConc === t.tarefa_id) h += `<form class="form" data-conc="${t.tarefa_id}">
       <label style="grid-column:1/-1">Onde está o arquivo entregue? (opcional)
@@ -386,6 +389,15 @@ $("#app").addEventListener("click", async e => {
     case "revisao": return rpc("fn_alterar_status", { p_tarefa_id: id, p_usuario_id: me.id, p_status: "em_revisao" }, `Tarefa #${id} enviada para revisão.`);
     case "concluir": openConc = id; openDep = null; return render();
     case "cancel-conc": openConc = null; return render();
+    case "excluir": confirmDel = id; return render();
+    case "excluir-nao": confirmDel = null; return render();
+    case "excluir-ok": {
+      confirmDel = null;
+      const { error } = await db.from("tarefas").delete().eq("id", id);
+      if (error) return toast(/foreign key|violates/i.test(error.message)
+        ? "Outra tarefa depende desta. Remova a dependência ou exclua a outra tarefa antes." : errMsg(error));
+      toast(`Tarefa #${id} excluída.`); await load(); return render();
+    }
     case "dep": openDep = openDep === id ? null : id; openConc = null; return render();
     case "cobrar": return rpc("fn_registrar_cobranca", { p_dependencia_id: id, p_usuario_id: me.id }, "Cobrança registrada no histórico.");
     case "resolver": return rpc("fn_resolver_dependencia", { p_dependencia_id: id, p_usuario_id: me.id }, "Pendência resolvida.");

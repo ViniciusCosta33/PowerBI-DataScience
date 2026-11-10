@@ -24,6 +24,7 @@ const fDT = ts => ts ? new Date(ts).toLocaleString("pt-BR", { day: "2-digit", mo
 const STATUS = { a_fazer: "A fazer", em_andamento: "Em andamento", aguardando: "Aguardando", em_revisao: "Em revisão", concluida: "Concluída", cancelada: "Cancelada" };
 const AREA = { contabil: "Contábil", fiscal: "Fiscal", departamento_pessoal: "Depto. Pessoal", societario: "Societário", financeiro: "Financeiro", administrativo: "Administrativo" };
 const MOD = { presencial: "Presencial", home_office: "Home office", hibrido: "Híbrido" };
+const PRIO = { baixa: "baixa", media: "média", alta: "alta", urgente: "urgente" };
 const TIPO = { tarefa: "Outra tarefa", pessoa: "Colega", cliente: "Cliente", externo: "Externo" };
 const SIT = {
   "Liberada para iniciar": ["--ok", "--ok-bg"], "Em andamento": ["--info", "--info-bg"], "Bloqueada": ["--bad", "--bad-bg"],
@@ -108,9 +109,13 @@ $("#btn-logout").onclick = async () => { await sb.auth.signOut(); location.hash 
 $("#btn-refresh").onclick = () => load().then(render);
 
 let recovering = false;
-sb.auth.onAuthStateChange((ev) => {
+let currentUid; // undefined até o primeiro evento (INITIAL_SESSION)
+sb.auth.onAuthStateChange((ev, session) => {
   if (ev === "PASSWORD_RECOVERY") { recovering = true; show("newpw"); return; }
-  if (ev === "SIGNED_IN" || ev === "SIGNED_OUT") { if (!recovering) boot(); }
+  if (recovering) return;
+  const uid = session ? session.user.id : null;
+  // o Supabase repete SIGNED_IN (ex.: ao voltar para a aba); só recarrega se o usuário mudou
+  if (uid !== currentUid) { currentUid = uid; setTimeout(boot, 0); }
 });
 
 function show(which) {
@@ -183,7 +188,7 @@ function taskCard(t) {
     <div class="task-top"><div class="task-title"><span class="small muted mono">#${t.tarefa_id}</span><h3>${esc(t.titulo)}</h3>
       <span class="task-meta">${esc(t.cliente_codigo || "")} ${esc(t.cliente)} · ${AREA[t.area]}${t.competencia_txt ? ` · competência <span class="mono">${t.competencia_txt}</span>` : ""}${t.responsavel_id !== me.id ? " · resp. " + esc(t.responsavel) : ""}</span>
       ${t.descricao ? `<span class="small">${esc(t.descricao)}</span>` : ""}</div>
-    <div class="task-right">${prazoTxt(t)} ${pill(t.situacao)} <span class="small muted">${t.prioridade}</span></div></div>`;
+    <div class="task-right">${prazoTxt(t)} ${pill(t.situacao)} <span class="small muted">prioridade ${PRIO[t.prioridade]}</span></div></div>`;
   if (deps.length) {
     h += `<div class="deps"><span class="small muted">Aguardando:</span>` + deps.map(d => {
       const pessoa = d.bloqueador_usuario_id === me.id;
@@ -412,5 +417,5 @@ $("#app").addEventListener("submit", async e => {
   } finally { if (btn && document.body.contains(btn)) btn.disabled = false; }
 });
 
-boot();
+
 })();

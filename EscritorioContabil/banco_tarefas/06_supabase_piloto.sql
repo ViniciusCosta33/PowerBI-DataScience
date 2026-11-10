@@ -106,3 +106,6 @@ REVOKE EXECUTE ON FUNCTION fn_carimbar_comentario(), fn_email_minusculo() FROM P
 -- ---------------------------------------------------------------- expõe o schema na API
 ALTER ROLE authenticator SET pgrst.db_schemas = 'public, graphql_public, escritorio';
 NOTIFY pgrst, 'reload config';
+
+-- ---------------------------------------------------------------- área Legalização (bancos criados antes dela)
+ALTER TYPE escritorio.area_escritorio ADD VALUE IF NOT EXISTS 'legalizacao' AFTER 'societario';

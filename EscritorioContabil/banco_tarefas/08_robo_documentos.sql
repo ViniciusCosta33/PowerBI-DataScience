@@ -92,11 +92,12 @@ BEGIN
     IF v_n > 1 THEN RETURN jsonb_build_object('ok', false, 'motivo', 'Mais de um cliente com a raiz de CNPJ ' || v_raiz); END IF;
     SELECT * INTO v_cli FROM clientes WHERE ativo AND left(regexp_replace(cnpj_cpf, '\D', '', 'g'), 8) = v_raiz;
     IF p_tipo = 'cnd_federal' THEN
+        -- só tarefas que ainda esperam o documento (em revisão = documento já recebido)
         SELECT count(*) INTO v_qtd FROM tarefas t
-         WHERE t.cliente_id = v_cli.id AND t.status NOT IN ('concluida', 'cancelada')
+         WHERE t.cliente_id = v_cli.id AND t.status NOT IN ('concluida', 'cancelada', 'em_revisao')
            AND upper(translate(t.titulo, 'ÁÀÃÂÉÊÍÓÔÕÚÇáàãâéêíóôõúç', 'AAAAEEIOOOUCaaaaeeiooouc')) ~ '(CND|CERTIDAO)';
         SELECT t.id, t.titulo, t.prazo INTO v_tar FROM tarefas t
-         WHERE t.cliente_id = v_cli.id AND t.status NOT IN ('concluida', 'cancelada')
+         WHERE t.cliente_id = v_cli.id AND t.status NOT IN ('concluida', 'cancelada', 'em_revisao')
            AND upper(translate(t.titulo, 'ÁÀÃÂÉÊÍÓÔÕÚÇáàãâéêíóôõúç', 'AAAAEEIOOOUCaaaaeeiooouc')) ~ '(CND|CERTIDAO)'
          ORDER BY (upper(t.titulo) LIKE '%FEDERA%') DESC, t.prazo NULLS LAST, t.id
          LIMIT 1;

@@ -35,6 +35,9 @@ const SIT = {
   "Em revisão": ["--review", "--review-bg"], "Concluída": ["--idle", "--idle-bg"], "Cancelada": ["--idle", "--idle-bg"],
 };
 const pill = (txt, key = txt) => { const [fg, bg] = SIT[key] || SIT["Concluída"]; return `<span class="pill" style="--pfg:var(${fg});--pbg:var(${bg})">${esc(txt)}</span>`; };
+// caminho de arquivo: link clicável quando é endereço da web (ex.: Google Drive)
+const arquivoHtml = c => !c ? "" : /^https:\/\//.test(c)
+  ? `<a href="${esc(c)}" target="_blank" rel="noopener noreferrer">abrir arquivo</a>` : `<span class="mono">${esc(c)}</span>`;
 const aberta = t => !["concluida", "cancelada"].includes(t.status);
 const nomeU = id => (D.usuarios.find(u => u.id === id) || {}).nome || "";
 function prazoTxt(t) {
@@ -208,6 +211,7 @@ function taskCard(t) {
         <span class="small muted"> · há ${d.dias_pendente} dia(s)${d.ultima_cobranca ? " · cobrado " + fDT(d.ultima_cobranca) : ""}${contato}</span></span>${acoes}</div>`;
     }).join("") + `</div>`;
   }
+  if (aberta(t) && t.caminho_arquivos) h += `<div class="small">Arquivo recebido: ${arquivoHtml(t.caminho_arquivos)}</div>`;
   if (pode && aberta(t)) {
     const b = [];
     if (t.status === "a_fazer") b.push(`<button class="btn primary" data-act="iniciar" data-id="${t.tarefa_id}" type="button">Iniciar</button>`);
@@ -226,7 +230,7 @@ function taskCard(t) {
       <button class="btn" type="button" data-act="cancel-conc">Cancelar</button></div></form>`;
     if (openDep === t.tarefa_id) h += depForm(t);
   } else if (t.status === "concluida") {
-    h += `<div class="small muted">Concluída por <b>${esc(t.concluido_por)}</b> em <span class="mono">${fDT(t.concluido_em)}</span>${t.concluida_no_prazo === false ? " · com atraso" : t.concluida_no_prazo ? " · no prazo" : ""}${t.caminho_arquivos ? ` · arquivo: <span class="mono">${esc(t.caminho_arquivos)}</span>` : ""}</div>`;
+    h += `<div class="small muted">Concluída por <b>${esc(t.concluido_por)}</b> em <span class="mono">${fDT(t.concluido_em)}</span>${t.concluida_no_prazo === false ? " · com atraso" : t.concluida_no_prazo ? " · no prazo" : ""}${t.caminho_arquivos ? ` · arquivo: ${arquivoHtml(t.caminho_arquivos)}` : ""}</div>`;
   }
   return h + `</article>`;
 }
@@ -355,17 +359,17 @@ const ROBO_RES = {
 function viewRobo() {
   const nomeCli = id => (D.clientes.find(c => c.id === id) || {}).razao_social || "";
   return `<section><div class="sec-head"><h2>Robô de documentos</h2>
-      <span class="small muted">lê os PDFs de 00_ENTRADA no computador central, arquiva na pasta do cliente e dá a baixa</span></div>
+      <span class="small muted">lê os PDFs de 00_ENTRADA no Google Drive, arquiva na pasta do cliente e dá a baixa</span></div>
     ${tokenNovo ? `<div class="deps"><b>Chave do robô (aparece só agora):</b>
         <span class="mono" style="word-break:break-all">${esc(tokenNovo)}</span>
         <div class="actions"><button class="btn" data-act="copiar-token" type="button">Copiar</button>
-        <span class="small muted">Cole no robo_config.ini do computador central, em token_robo. A chave anterior parou de funcionar.</span></div></div>`
+        <span class="small muted">Cole no script do Google (Configurações do projeto → Propriedades do script → TOKEN_ROBO). A chave anterior parou de funcionar.</span></div></div>`
       : `<div class="actions"><button class="btn" data-act="gerar-token" type="button">Gerar chave do robô</button>
         <span class="small muted">Gerar uma nova chave desativa a anterior.</span></div>`}
     ${D.robo.length ? `<div class="tbl"><table><thead><tr><th>Quando</th><th>Arquivo</th><th>Cliente</th><th>Resultado</th><th>Detalhe</th><th>Arquivado em</th></tr></thead><tbody>` +
       D.robo.map(e => { const [txt, key] = ROBO_RES[e.resultado] || [e.resultado, "Concluída"];
         return `<tr><td class="mono">${fDT(e.ocorrido_em)}</td><td class="small">${esc(e.arquivo)}</td><td>${esc(nomeCli(e.cliente_id))}${e.tarefa_id ? `<br><span class="small muted">tarefa #${e.tarefa_id}</span>` : ""}</td>
-          <td>${pill(txt, key)}</td><td class="small wrapc">${esc(e.detalhe || "")}</td><td class="mono small">${esc(e.caminho_destino || "")}</td></tr>`; }).join("") + `</tbody></table></div>`
+          <td>${pill(txt, key)}</td><td class="small wrapc">${esc(e.detalhe || "")}</td><td class="small">${arquivoHtml(e.caminho_destino)}</td></tr>`; }).join("") + `</tbody></table></div>`
       : '<div class="empty">O robô ainda não processou nenhum documento.</div>'}</section>`;
 }
 

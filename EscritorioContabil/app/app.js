@@ -12,7 +12,7 @@ const db = sb.schema("escritorio");
 
 // ------------------------------------------------------------------ estado
 let me = null;              // linha de escritorio.usuarios do usuário logado
-let D = { tarefas: [], pend: [], usuarios: [], clientes: [], resumo: [], hist: [], garg: [] };
+let D = { tarefas: [], pend: [], usuarios: [], clientes: [], resumo: [], hist: [], garg: [], rec: [] };
 let tab = "minhas";         // gestor: painel | todas | nova | cadastros | minhas
 let openDep = null, openConc = null, authMode = "login", timer = null;
 
@@ -25,6 +25,9 @@ const STATUS = { a_fazer: "A fazer", em_andamento: "Em andamento", aguardando: "
 const AREA = { contabil: "Contábil", fiscal: "Fiscal", departamento_pessoal: "Depto. Pessoal", societario: "Societário", legalizacao: "Legalização", financeiro: "Financeiro", administrativo: "Administrativo" };
 const MOD = { presencial: "Presencial", home_office: "Home office", hibrido: "Híbrido" };
 const PRIO = { baixa: "baixa", media: "média", alta: "alta", urgente: "urgente" };
+const PER = { semanal: "semanal", quinzenal: "quinzenal", mensal: "mensal", bimestral: "bimestral", trimestral: "trimestral", semestral: "semestral", anual: "anual" };
+const COMPREG = { mes_anterior: "mês anterior ao vencimento", mesmo_mes: "mesmo mês do vencimento", sem_competencia: "sem competência" };
+const FDS = { manter: "manter a data", antecipar: "antecipar para sexta", adiar: "adiar para segunda" };
 const TIPO = { tarefa: "Outra tarefa", pessoa: "Colega", cliente: "Cliente", externo: "Externo" };
 const SIT = {
   "Liberada para iniciar": ["--ok", "--ok-bg"], "Em andamento": ["--info", "--info-bg"], "Bloqueada": ["--bad", "--bad-bg"],
@@ -147,7 +150,7 @@ async function q(p) { const { data, error } = await p; if (error) throw error; r
 async function load() {
   try {
     const gest = me.perfil === "gestor";
-    const [tarefas, pend, usuarios, clientes, resumo, hist, garg] = await Promise.all([
+    const [tarefas, pend, usuarios, clientes, resumo, hist, garg, rec] = await Promise.all([
       q(db.from("vw_tarefas").select("*")),
       q(db.from("vw_pendencias_abertas").select("*")),
       q(db.from("usuarios").select("id,nome,email,cargo,area,perfil,modalidade,ativo,auth_user_id").order("nome")),
@@ -155,8 +158,9 @@ async function load() {
       gest ? q(db.from("vw_gestor_resumo_usuario").select("*")) : [],
       gest ? q(db.from("vw_gestor_linha_tempo").select("*").order("ocorrido_em", { ascending: false }).limit(60)) : [],
       gest ? q(db.from("vw_gestor_gargalos").select("*")) : [],
+      gest ? q(db.from("vw_tarefas_recorrentes").select("*").order("ativo", { ascending: false }).order("proximo_vencimento")) : [],
     ]);
-    D = { tarefas, pend, usuarios, clientes, resumo, hist, garg };
+    D = { tarefas, pend, usuarios, clientes, resumo, hist, garg, rec };
   } catch (e) { toast("Erro ao carregar: " + errMsg(e)); }
 }
 async function rpc(fn, args, okMsg) {
@@ -172,10 +176,10 @@ function render() {
   const gest = me.perfil === "gestor";
   let h = `<div class="who"><h2>${esc(me.nome)}</h2><span class="muted">${esc(me.cargo || "")} · ${MOD[me.modalidade]}${gest ? " · gestor" : ""}</span></div>`;
   if (gest) {
-    const tabs = [["painel", "Painel do gestor"], ["todas", "Todas as tarefas"], ["nova", "Nova tarefa"], ["cadastros", "Equipe e clientes"], ["minhas", "Minhas tarefas"]];
+    const tabs = [["painel", "Painel do gestor"], ["todas", "Todas as tarefas"], ["nova", "Nova tarefa"], ["recorrentes", "Tarefas recorrentes"], ["cadastros", "Equipe e clientes"], ["minhas", "Minhas tarefas"]];
     h += `<div class="tabs" role="tablist">${tabs.map(([k, l]) => `<button class="tab" role="tab" type="button" data-tab="${k}" aria-selected="${tab === k}">${l}</button>`).join("")}</div>`;
   }
-  const v = { painel: viewPainel, todas: viewTodas, nova: viewNova, cadastros: viewCadastros, minhas: viewMinhas }[tab]();
+  const v = { painel: viewPainel, todas: viewTodas, nova: viewNova, recorrentes: viewRecorrentes, cadastros: viewCadastros, minhas: viewMinhas }[tab]();
   $("#app").innerHTML = `<div style="display:flex;flex-direction:column;gap:22px">${h}${v}</div>`;
 }
 
@@ -188,7 +192,7 @@ function taskCard(t) {
     <div class="task-top"><div class="task-title"><span class="small muted mono">#${t.tarefa_id}</span><h3>${esc(t.titulo)}</h3>
       <span class="task-meta">${esc(t.cliente_codigo || "")} ${esc(t.cliente)} · ${AREA[t.area]}${t.competencia_txt ? ` · competência <span class="mono">${t.competencia_txt}</span>` : ""}${t.responsavel_id !== me.id ? " · resp. " + esc(t.responsavel) : ""}</span>
       ${t.descricao ? `<span class="small">${esc(t.descricao)}</span>` : ""}</div>
-    <div class="task-right">${prazoTxt(t)} ${pill(t.situacao)} <span class="small muted">prioridade ${PRIO[t.prioridade]}</span></div></div>`;
+    <div class="task-right">${t.periodicidade ? `<span class="prazo" title="Tarefa recorrente">↻ ${PER[t.periodicidade]}</span>` : ""}${prazoTxt(t)} ${pill(t.situacao)} <span class="small muted">prioridade ${PRIO[t.prioridade]}</span></div></div>`;
   if (deps.length) {
     h += `<div class="deps"><span class="small muted">Aguardando:</span>` + deps.map(d => {
       const pessoa = d.bloqueador_usuario_id === me.id;
@@ -304,13 +308,37 @@ function viewNova() {
     <label class="wide">Título <input id="nt-titulo" required maxlength="200" placeholder="Ex.: Apuração do Simples Nacional (DAS)"></label>
     <label>Cliente <select id="nt-cliente">${opt(D.clientes.map(c => [String(c.id), c.codigo + " · " + c.razao_social]))}</select></label>
     <label>Área <select id="nt-area">${opt(Object.entries(AREA))}</select></label>
-    <label>Competência <input id="nt-comp" type="month" value="${mesAnt}"></label>
+    <label>Repetir <select id="nt-rep"><option value="">Não repete (tarefa única)</option>${opt(Object.entries(PER).map(([k, l]) => [k, l[0].toUpperCase() + l.slice(1)]))}</select></label>
+    <label data-unica>Competência <input id="nt-comp" type="month" value="${mesAnt}"></label>
     <label>Responsável <select id="nt-resp">${opt(ativos.map(u => [String(u.id), u.nome]))}</select></label>
     <label>Revisor (opcional) <select id="nt-rev"><option value="">—</option>${opt(ativos.map(u => [String(u.id), u.nome]))}</select></label>
     <label>Prioridade <select id="nt-prio">${opt([["baixa", "Baixa"], ["media", "Média"], ["alta", "Alta"], ["urgente", "Urgente"]], "media")}</select></label>
-    <label>Prazo <input id="nt-prazo" type="date" required></label>
+    <label><span id="nt-prazo-lbl">Prazo</span> <input id="nt-prazo" type="date" required></label>
+    <label data-rec hidden>Criar quantos dias antes <input id="nt-ant" type="number" min="0" max="90" value="10"></label>
+    <label data-rec hidden>Competência <select id="nt-compreg">${opt(Object.entries(COMPREG))}</select></label>
+    <label data-rec hidden>Se vencer no fim de semana <select id="nt-fds">${opt(Object.entries(FDS))}</select></label>
+    <label data-rec hidden>Repetir até (opcional) <input id="nt-fim" type="date"></label>
+    <p data-rec hidden class="small muted wide">O sistema cria cada tarefa sozinho, todo dia de madrugada, no número de dias escolhido antes do vencimento. As que já estiverem no período são criadas na hora.</p>
     <label class="wide">Descrição (opcional) <textarea id="nt-desc" maxlength="2000"></textarea></label>
     <div class="full"><button class="btn primary" type="submit">Criar tarefa</button></div></form>`;
+}
+
+function viewRecorrentes() {
+  const ativos = D.usuarios.filter(u => u.ativo);
+  if (!D.rec.length) return `<div class="empty">Nenhuma tarefa recorrente. Crie uma em "Nova tarefa" escolhendo uma opção em "Repetir".</div>`;
+  return `<section><div class="sec-head"><h2>Tarefas recorrentes</h2>
+      <button class="btn" data-act="gerar" type="button">Gerar as que já estão no prazo</button></div>
+    <div class="tbl"><table><thead><tr><th>Tarefa</th><th>Repete</th><th>Próximo vencimento</th><th>Criada antes</th><th>Competência</th><th>Responsável</th><th>Geradas</th><th></th></tr></thead><tbody>` +
+    D.rec.map(r => `<tr><td>${esc(r.titulo)}<br><span class="small muted">${esc(r.cliente_codigo || "")} ${esc(r.cliente || "(interna)")} · ${AREA[r.area]}</span></td>
+      <td>${PER[r.periodicidade]}${r.fim_de_semana !== "manter" ? `<br><span class="small muted">${FDS[r.fim_de_semana]}</span>` : ""}</td>
+      <td class="mono">${r.ativo ? fDate(r.proximo_vencimento) : "—"}${r.data_fim ? `<br><span class="small muted">até ${fDate(r.data_fim)}</span>` : ""}</td>
+      <td class="n">${r.antecedencia_dias} dia(s)</td><td class="small">${COMPREG[r.competencia_regra]}</td>
+      <td><select data-recresp="${r.id}" aria-label="Responsável">${ativos.map(u => `<option value="${u.id}"${u.id === r.responsavel_id ? " selected" : ""}>${esc(u.nome)}</option>`).join("")}</select></td>
+      <td class="n">${r.tarefas_geradas}</td>
+      <td>${r.ativo ? pill("Ativa", "Liberada para iniciar") : pill("Pausada", "Concluída")}
+        <button class="btn" data-act="recativo" data-id="${r.id}" data-v="${!r.ativo}" type="button">${r.ativo ? "Pausar" : "Retomar"}</button></td></tr>`).join("") +
+    `</tbody></table></div>
+    <p class="small muted">Pausar não apaga as tarefas já criadas. Trocar o responsável vale para as próximas tarefas.</p></section>`;
 }
 
 function viewCadastros() {
@@ -361,6 +389,18 @@ $("#app").addEventListener("click", async e => {
     case "dep": openDep = openDep === id ? null : id; openConc = null; return render();
     case "cobrar": return rpc("fn_registrar_cobranca", { p_dependencia_id: id, p_usuario_id: me.id }, "Cobrança registrada no histórico.");
     case "resolver": return rpc("fn_resolver_dependencia", { p_dependencia_id: id, p_usuario_id: me.id }, "Pendência resolvida.");
+    case "gerar": {
+      const { data, error } = await db.rpc("fn_gerar_tarefas_recorrentes", {});
+      if (error) return toast(errMsg(error));
+      toast(data ? `${data} tarefa(s) criada(s).` : "Nada novo: as próximas ainda não chegaram no prazo de criação.");
+      await load(); return render();
+    }
+    case "recativo": {
+      const { error } = await db.from("tarefas_recorrentes").update({ ativo: a.dataset.v === "true" }).eq("id", id);
+      if (error) return toast(errMsg(error));
+      toast(a.dataset.v === "true" ? "Recorrência retomada." : "Recorrência pausada. Nenhuma tarefa nova será criada.");
+      await load(); return render();
+    }
     case "ativo": {
       const { error } = await db.from("usuarios").update({ ativo: a.dataset.v === "true" }).eq("id", id);
       if (error) return toast(errMsg(error));
@@ -369,7 +409,19 @@ $("#app").addEventListener("click", async e => {
     }
   }
 });
-$("#app").addEventListener("change", e => {
+$("#app").addEventListener("change", async e => {
+  if (e.target.id === "nt-rep") {
+    const rec = !!e.target.value;
+    document.querySelectorAll("#form-tarefa [data-rec]").forEach(el => (el.hidden = !rec));
+    document.querySelectorAll("#form-tarefa [data-unica]").forEach(el => (el.hidden = rec));
+    $("#nt-prazo-lbl").textContent = rec ? "Primeiro vencimento" : "Prazo";
+    return;
+  }
+  if (e.target.matches("[data-recresp]")) {
+    const { error } = await db.from("tarefas_recorrentes").update({ responsavel_id: +e.target.value }).eq("id", +e.target.dataset.recresp);
+    if (error) return toast(errMsg(error));
+    toast("Responsável alterado para as próximas tarefas."); await load(); return render();
+  }
   if (!e.target.matches("[data-tipo]")) return;
   const f = e.target.closest("form"); const t = D.tarefas.find(x => x.tarefa_id === +f.dataset.depform);
   const ref = f.querySelector("[data-ref]"); ref.innerHTML = refOptions(e.target.value, t); ref.disabled = e.target.value === "externo";
@@ -390,6 +442,20 @@ $("#app").addEventListener("submit", async e => {
       if (!desc) return toast("Descreva o que está faltando.");
       const ok = await rpc("fn_adicionar_dependencia", { p_tarefa_id: tid, p_usuario_id: me.id, p_tipo: tipo, p_referencia_id: ref, p_descricao: desc }, `Pendência registrada. Tarefa #${tid} está aguardando.`);
       if (ok) { openDep = null; render(); }
+    } else if (f.id === "form-tarefa" && $("#nt-rep").value) {
+      const v = id => $(id).value;
+      const { data, error } = await db.from("tarefas_recorrentes").insert({
+        titulo: v("#nt-titulo").trim(), cliente_id: +v("#nt-cliente"), area: v("#nt-area"),
+        responsavel_id: +v("#nt-resp"), revisor_id: v("#nt-rev") ? +v("#nt-rev") : null, prioridade: v("#nt-prio"),
+        descricao: v("#nt-desc").trim() || null, periodicidade: v("#nt-rep"), primeiro_vencimento: v("#nt-prazo"),
+        antecedencia_dias: Math.max(0, Math.min(90, +v("#nt-ant") || 0)), competencia_regra: v("#nt-compreg"),
+        fim_de_semana: v("#nt-fds"), data_fim: v("#nt-fim") || null,
+      }).select("id").single();
+      if (error) return toast(errMsg(error));
+      await load();
+      const n = D.tarefas.filter(t => t.recorrencia_id === data.id).length;
+      toast(`Tarefa recorrente criada (${PER[v("#nt-rep")]}). ${n ? n + " tarefa(s) já criada(s) agora." : "A primeira será criada " + v("#nt-ant") + " dia(s) antes do vencimento."}`);
+      tab = "recorrentes"; render();
     } else if (f.id === "form-tarefa") {
       const v = id => $(id).value;
       const comp = v("#nt-comp");

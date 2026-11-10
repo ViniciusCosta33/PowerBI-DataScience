@@ -18,7 +18,7 @@ SET search_path TO escritorio, public;
 CREATE TYPE perfil_usuario   AS ENUM ('gestor', 'colaborador');
 CREATE TYPE modalidade_trab  AS ENUM ('presencial', 'home_office', 'hibrido');
 CREATE TYPE area_escritorio  AS ENUM ('contabil', 'fiscal', 'departamento_pessoal',
-                                      'societario', 'financeiro', 'administrativo');
+                                      'societario', 'legalizacao', 'financeiro', 'administrativo');
 CREATE TYPE status_tarefa    AS ENUM ('a_fazer', 'em_andamento', 'aguardando',
                                       'em_revisao', 'concluida', 'cancelada');
 CREATE TYPE prioridade_tarefa AS ENUM ('baixa', 'media', 'alta', 'urgente');

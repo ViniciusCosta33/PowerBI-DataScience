@@ -22,7 +22,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": 
 const fDate = iso => { if (!iso) return ""; const [y, m, d] = iso.slice(0, 10).split("-"); return `${d}/${m}/${y}`; };
 const fDT = ts => ts ? new Date(ts).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
 const STATUS = { a_fazer: "A fazer", em_andamento: "Em andamento", aguardando: "Aguardando", em_revisao: "Em revisão", concluida: "Concluída", cancelada: "Cancelada" };
-const AREA = { contabil: "Contábil", fiscal: "Fiscal", departamento_pessoal: "Depto. Pessoal", societario: "Societário", financeiro: "Financeiro", administrativo: "Administrativo" };
+const AREA = { contabil: "Contábil", fiscal: "Fiscal", departamento_pessoal: "Depto. Pessoal", societario: "Societário", legalizacao: "Legalização", financeiro: "Financeiro", administrativo: "Administrativo" };
 const MOD = { presencial: "Presencial", home_office: "Home office", hibrido: "Híbrido" };
 const PRIO = { baixa: "baixa", media: "média", alta: "alta", urgente: "urgente" };
 const TIPO = { tarefa: "Outra tarefa", pessoa: "Colega", cliente: "Cliente", externo: "Externo" };
